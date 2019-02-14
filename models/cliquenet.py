@@ -1,5 +1,5 @@
 import tensorflow as tf
-from utils import *
+from models.utils import *
 
 block_num=3
 
@@ -25,7 +25,7 @@ def build_model(input_images, k, T, label_num, is_train, keep_prob, if_a, if_b, 
         final_feature=tf.concat((final_feature, current_list[block_id+1]),
                                 axis=3)
     feature_length=final_feature.get_shape().as_list()[-1]
-    print 'final feature length:',feature_length
+    print ('final feature length:',feature_length)
 
     feature_flatten=tf.reshape(final_feature, [-1, feature_length])
     ##   final_fc

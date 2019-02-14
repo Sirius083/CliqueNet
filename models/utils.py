@@ -85,28 +85,54 @@ def first_transit(input_layer, channels, strides, with_biase=False):
 
 
 def loop_block(input_layer, if_b, channels_per_layer, layer_num, is_train, keep_prob, block_name, loop_num=1):
+    # 这个函数是loop_block_II_II的形式
+    print('=======================================================================================')
+    print('Inside loop_block')
+    print('input_layer', input_layer) # (N,32,32,64)
+    
     if if_b: layer_num = layer_num/2 ## if bottleneck is used, the T value should be multiplied by 2.
     channels=channels_per_layer
     node_0_channels=input_layer.get_shape().as_list()[-1]
+    # print('node_0_channels', node_0_channels)
+
     ## init param
     param_dict={}
     kernel_size=(1, 1) if if_b==True else (3, 3)
-    for layer_id in range(1, layer_num):
+    
+    # print('param_dict, ==============================')
+    # print('layer_num', layer_num)
+
+    for layer_id in range(1, int(layer_num)):
+        # print('layer_id ', layer_id, '***')
         add_id=1
         while layer_id+add_id <= layer_num:
             
-            ## ->
+            # 这一部分只是创建变量，并没有对其进行连接
+            ## -> forward 
             filters=conv_var(kernel_size=kernel_size, in_channels=channels, out_channels=channels, init_method='msra', name=block_name+'-'+str(layer_id)+'_'+str(layer_id+add_id))
             param_dict[str(layer_id)+'_'+str(layer_id+add_id)]=filters
-            ## <-
+            # print('filters', filters)
+            # print('{:15s}'.format('filters'), filters)
+            ## <- backward
             filters_inv=conv_var(kernel_size=kernel_size, in_channels=channels, out_channels=channels, init_method='msra', name=block_name+'-'+str(layer_id+add_id)+'_'+str(layer_id))
             param_dict[str(layer_id+add_id)+'_'+str(layer_id)]=filters_inv
             add_id+=1
+            # print('filters_inv', filters_inv)
+            # print('{:15s}'.format('filters_inv'), filters_inv)
     
-    for layer_id in range(layer_num):
+    # 从x_0到剩余节点的
+    for layer_id in range(int(layer_num)):
+        # print('layer_id ^^^')
         filters=conv_var(kernel_size=kernel_size, in_channels=node_0_channels, out_channels=channels, init_method='msra', name=block_name+'-'+str(0)+'_'+str(layer_id+1))
         param_dict[str(0)+'_'+str(layer_id+1)]=filters
+        # print('filters', filters)
     
+    
+    # print param_dict
+    for k,v in param_dict.items():
+        print(k,v)
+    
+    # 每个block中总变量个数是A_n_(2) + n
     assert len(param_dict)==layer_num*(layer_num-1)+layer_num
 
     ###   bottleneck param  ###
@@ -115,22 +141,38 @@ def loop_block(input_layer, if_b, channels_per_layer, layer_num, is_train, keep_
         for layer_id in range(1, layer_num+1):
             filters=conv_var(kernel_size=(3,3), in_channels=channels, out_channels=channels, init_method='msra', name=block_name+'-'+'to-'+str(layer_id))
             param_dict_B[str(layer_id)]=filters
-
+    
+    # print('blob_dict ==============================')
     ## init blob
+    # print('init blob')
     blob_dict={}
+    
 
-    for layer_id in range(1, layer_num+1):
+    # 这一部分相当于是 stage_0
+    for layer_id in range(1, int(layer_num)+1):
+        # print('==================')
+        # print('layer_id', layer_id)
         bottom_blob=input_layer
         bottom_param=param_dict['0_'+str(layer_id)]
-        for layer_id_id in range(1, layer_id):
-            bottom_blob=tf.concat((bottom_blob, blob_dict[str(layer_id_id)]), axis=3)
-            bottom_param=tf.concat((bottom_param, param_dict[str(layer_id_id)+'_'+str(layer_id)]), axis=2)
+        # print('{:15s}'.format('bottom_blob'), bottom_blob)
 
+        # 第一步是range(1,1), 所以不循环
+        for layer_id_id in range(1, layer_id):
+            # print('==========')
+            # print('{:15s}'.format('layer_id_id'),layer_id_id)
+            # print('blob_dict', blob_dict)
+            # print(blob_dict[str(layer_id_id)])
+            bottom_blob=tf.concat((bottom_blob, blob_dict[str(layer_id_id)]), axis=3)
+            # print('{:15s}'.format('bottom_blob'), bottom_blob)
+            bottom_param=tf.concat((bottom_param, param_dict[str(layer_id_id)+'_'+str(layer_id)]), axis=2)
+            # print('{:15s}'.format('bottom_param'),bottom_param)
 
         mid_layer=tf.contrib.layers.batch_norm(bottom_blob, scale=True, is_training=is_train, updates_collections=None)
         mid_layer=tf.nn.relu(mid_layer)
         mid_layer=tf.nn.conv2d(mid_layer, bottom_param, [1,1,1,1], padding='SAME')
         mid_layer=tf.nn.dropout(mid_layer, keep_prob)
+        # print('{:15s}'.format('mid_layer'), mid_layer)
+
         ##  Bottle neck
         if if_b==True:
             next_layer=tf.contrib.layers.batch_norm(mid_layer, scale=True, is_training=is_train, updates_collections=None)
@@ -139,27 +181,49 @@ def loop_block(input_layer, if_b, channels_per_layer, layer_num, is_train, keep_
             next_layer=tf.nn.dropout(next_layer, keep_prob)
         else:
             next_layer=mid_layer
-        blob_dict[str(layer_id)]=next_layer
+        
+        blob_dict[str(layer_id)]=next_layer 
     
+    print('stage 0 blob_dict')
+    for k,v in blob_dict.items():
+        print(k,v)
+
     ## begin loop
+    print('begin loop')
+    print('loop_num', loop_num)
+    # print('blob_dict', blob_dict)
+    # print('param_dict', param_dict)
+    # 这一部分相当于是 stage_1
     for loop_id in range(loop_num):
-        for layer_id in range(1, layer_num+1):    ##   [1,2,3,4,5]
-            
-            layer_list=[str(l_id) for l_id in range(1, layer_num+1)]
-            layer_list.remove(str(layer_id))
-            
+        print('====================')
+        print('{:15s}'.format('loop_id'), loop_id) # 只循环一次 loop_id = 0
+
+        for layer_id in range(1, int(layer_num)+1):    ##   [1,2,3,4,5]
+            print('==========') 
+            print('{:15s}'.format('layer_id'), layer_id)
+
+            layer_list=[str(l_id) for l_id in range(1, int(layer_num)+1)]
+            layer_list.remove(str(layer_id)) # 除去的layer_id序号 ['1','2','3','4','5']除去'2',剩下['1','3','4','5']
+            print('layer_list', layer_list)
+
             bottom_blobs=blob_dict[layer_list[0]]
             bottom_param=param_dict[layer_list[0]+'_'+str(layer_id)]
+            print('{:15s}'.format('init blobs index'), layer_list[0])
+            print('{:15s}'.format('init param index'), layer_list[0]+'_'+str(layer_id))
+
             for bottom_id in range(len(layer_list)-1):
                 bottom_blobs=tf.concat((bottom_blobs, blob_dict[layer_list[bottom_id+1]]),
                         axis=3)   ###  concatenate the data blobs
                 bottom_param=tf.concat((bottom_param, param_dict[layer_list[bottom_id+1]+'_'+str(layer_id)]),
                         axis=2)   ###  concatenate the parameters                
-            
+                print('{:15s}'.format('index blob'), layer_list[bottom_id+1])
+                print('{:15s}'.format('index param'),layer_list[bottom_id+1]+'_'+str(layer_id))
+
             mid_layer=tf.contrib.layers.batch_norm(bottom_blobs,  scale=True, is_training=is_train, updates_collections=None)
             mid_layer=tf.nn.relu(mid_layer)            
             mid_layer=tf.nn.conv2d(mid_layer, bottom_param, [1,1,1,1], padding='SAME')    ###  update the data blob
             mid_layer=tf.nn.dropout(mid_layer, keep_prob)
+            
             ## Bottle neck
             if if_b==True:
                 next_layer=tf.contrib.layers.batch_norm(mid_layer, scale=True, is_training=is_train, updates_collections=None)
@@ -168,18 +232,35 @@ def loop_block(input_layer, if_b, channels_per_layer, layer_num, is_train, keep_
                 next_layer=tf.nn.dropout(next_layer, keep_prob)
             else:
                 next_layer=mid_layer
+            
+            print('{:15s}'.format('next_layer'),next_layer)
             blob_dict[str(layer_id)]=next_layer
-    
+            
+
+    # print blob_dict
+    print('===============================')
+    print('blob_dict final result')
+    for k,v in blob_dict.items():
+        print(k,v)
+
+
     transit_feature=blob_dict['1']
-    for layer_id in range(2, layer_num+1):
+    for layer_id in range(2, int(layer_num)+1):
         transit_feature=tf.concat((transit_feature, blob_dict[str(layer_id)]), axis=3)    
     
     block_feature=tf.concat((input_layer, transit_feature), axis=3)
     
+    print('block feature', block_feature)
+    print('transit_feature', transit_feature)
+
     return block_feature, transit_feature
 
 def loop_block_I_I(input_layer, if_b, channels_per_layer, layer_num, is_train, keep_prob, block_name):
-    if if_b: layer_num = layer_num/2 ## if bottleneck is used, the T value should be multiplied by 2.
+    if if_b: 
+       layer_num = int(layer_num/2) ## if bottleneck is used, the T value should be multiplied by 2.
+    else:
+        layer_num = int(layer_num)
+
     channels=channels_per_layer
     node_0_channels=input_layer.get_shape().as_list()[-1]
     ## init param
@@ -225,6 +306,7 @@ def loop_block_I_I(input_layer, if_b, channels_per_layer, layer_num, is_train, k
         mid_layer=tf.nn.relu(mid_layer)
         mid_layer=tf.nn.conv2d(mid_layer, bottom_param, [1,1,1,1], padding='SAME')
         mid_layer=tf.nn.dropout(mid_layer, keep_prob)
+        
         ##  Bottle neck
         if if_b==True:
             next_layer=tf.contrib.layers.batch_norm(mid_layer, scale=True, is_training=is_train, updates_collections=None)
@@ -247,7 +329,10 @@ def loop_block_I_I(input_layer, if_b, channels_per_layer, layer_num, is_train, k
 
 
 def loop_block_I_II(input_layer, if_b, channels_per_layer, layer_num, is_train, keep_prob, block_name, loop_num=1):
-    if if_b: layer_num = layer_num/2 ## if bottleneck is used, the T value should be multiplied by 2.
+    if if_b: 
+       layer_num = int(layer_num/2) ## if bottleneck is used, the T value should be multiplied by 2.
+    else:
+        layer_num = int(layer_num)
     import copy
 
     channels=channels_per_layer
@@ -341,6 +426,7 @@ def loop_block_I_II(input_layer, if_b, channels_per_layer, layer_num, is_train, 
     
     assert len(blob_dict_list)==1+loop_num
     
+    # 将 blob_dict存储了两部分,blob_dict[0]:存储的是stage_1的输出, blob_dict[1]存储的是stage_2的输出
     stage_I = blob_dict_list[0]['1']
     for layer_id in range(2, layer_num+1):
         stage_I=tf.concat((stage_I, blob_dict_list[0][str(layer_id)]), axis=3)     
@@ -356,7 +442,11 @@ def loop_block_I_II(input_layer, if_b, channels_per_layer, layer_num, is_train, 
     
 
 def loop_block_X(input_layer, x_value, if_b, channels_per_layer, layer_num, is_train, keep_prob, block_name, loop_num=1):
-    if if_b: layer_num = layer_num/2 ## if bottleneck is used, the T value should be multiplied by 2.
+    # 这里多了一个参数叫 x_value
+    if if_b: 
+       layer_num = int(layer_num/2) ## if bottleneck is used, the T value should be multiplied by 2.
+    else:
+        layer_num = int(layer_num)
     channels=channels_per_layer
     node_0_channels=input_layer.get_shape().as_list()[-1]
     ## init param
@@ -448,3 +538,15 @@ def loop_block_X(input_layer, x_value, if_b, channels_per_layer, layer_num, is_t
     block_feature=tf.concat((input_layer, transit_feature), axis=3)
     
     return block_feature, transit_feature
+
+
+
+
+
+'''
+Fixed size formatting
+10s format a string with 10 spaces, left justified
+3d  format an integer with 3 spaces, right justified
+7.2f format a float, reserving 7 spaces, 2 for decimal point , right justified
+print('{:10s} {:3d}  {:7.2f}'.format('xxx',123,98))
+'''
