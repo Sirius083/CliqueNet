@@ -5,6 +5,8 @@ import tensorflow as tf
 import time
 from dataloader.data_generator import load_data
 from models.cliquenet import build_model
+# Note: 增加tensorboard用于可视化
+import tensorboard 
 
 def into_batch(data, label, batch_size, shuffle):
     if shuffle:
@@ -12,7 +14,10 @@ def into_batch(data, label, batch_size, shuffle):
         data = data[rand_indexes]
         label = label[rand_indexes]
         
-    batch_count=len(data)/batch_size
+    batch_count=int(len(data)/batch_size)
+    print('==============================================')
+    print('batch_count', batch_count)
+    print('batch_size', batch_size)
     batches_data = np.split(data[:batch_count*batch_size], batch_count)
     batches_data.append(data[batch_count*batch_size:])
     batches_labels = np.split(label[:batch_count * batch_size], batch_count)
@@ -34,7 +39,10 @@ def count_params():
 
 
 if __name__=='__main__':
-    ##  
+    ##
+    import time
+    s_time = time.time()
+
     train_params={'normalize_type': 'by-channels',   ## by-channels, divide-255, divide-256
             'initial_lr': 0.1,
             'weight_decay': 1e-4,
@@ -61,6 +69,8 @@ if __name__=='__main__':
                         help='if use compression')
         
     args = parser.parse_args()
+    print('==================== args')
+    print(args)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     
     dataset=args.dataset
@@ -77,8 +87,12 @@ if __name__=='__main__':
     kp = train_params['keep_prob']
     weight_decay = train_params['weight_decay']
     
+    # Note: build
+    ''' 
     if os.path.exists(result_dir)==False:
-        os.mkdir(result_dir)
+         os.mkdir(result_dir)
+    '''
+    result_dir = r'E:/cliqueNet/result_dir/k_12_T_36'
           
     train_data, train_label, test_data, test_label=load_data(dataset, train_params['normalize_type'])
 
@@ -125,6 +139,7 @@ if __name__=='__main__':
         loss_test=[]
         acc_test=[]
         best_acc=0
+        
         for epoch in range(1, total_epoches+1):
             if epoch == total_epoches/2 : lr=lr*0.1
             if epoch == total_epoches*3/4 : lr=lr*0.1
@@ -146,8 +161,8 @@ if __name__=='__main__':
                 loss_per_bat.append(result_per_bat[1])
                 acc_per_bat.append(result_per_bat[2])
                 if (batch_id+1) % 100==0:
-                    print 'epoch:', epoch, 'batch:', batch_id+1, 'in', batch_count
-                    print 'loss:', result_per_bat[1], 'accuracy:', result_per_bat[2]
+                    print ('epoch:', epoch, 'batch:', batch_id+1, 'in', batch_count)
+                    print ('loss:', result_per_bat[1], 'accuracy:', result_per_bat[2])
                 
             saver.save(sess, os.path.join(result_dir, dataset+'_epoch_%d.ckpt' % epoch))
             loss_train.append(np.mean(loss_per_bat))
@@ -172,15 +187,18 @@ if __name__=='__main__':
             if acc_test[-1]>best_acc:
                 best_acc=acc_test[-1]      
             
-            print time.ctime()
-            print 'epoch:',epoch
-            print 'train loss:', loss_train[-1],'acc:',acc_train[-1]
-            print 'test loss:', loss_test[-1], 'acc:', acc_test[-1]
-            print 'best test acc:', best_acc
-            print '\n'
+            print (time.ctime())
+            print ('epoch:',epoch)
+            print ('train loss:', loss_train[-1],'acc:',acc_train[-1])
+            print ('test loss:', loss_test[-1], 'acc:', acc_test[-1])
+            print ('best test acc:', best_acc)
+            print ('\n')
             
         np.save(os.path.join(result_dir, result_dir+'_loss_train.npy'), np.array(loss_train))
         np.save(os.path.join(result_dir, result_dir+'_acc_train.npy'), np.array(acc_train))        
         np.save(os.path.join(result_dir, result_dir+'_loss_test.npy'), np.array(loss_test))
         np.save(os.path.join(result_dir, result_dir+'_acc_test.npy'), np.array(acc_test))         
     
+    e_time = time.time()
+    d_time = (e_time-s_time)/60
+    print('total run time {} min'.format(str(d_time)))

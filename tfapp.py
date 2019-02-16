@@ -1,4 +1,8 @@
-python train.py --dataset=cifar-10 --dir=E:/cliqueNet/train_dir --k=64 --T=15
+python train.py --dataset=cifar-10 --k=12 --T=36 --if_a=True --if_c=True --dir=E:/CliqueNet/train_dir/k_12_T_36 
+
+#  T: 每个block中有几层
+#  k: 每层中有几个filter
+#  
 
 '''
 问题

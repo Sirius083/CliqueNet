@@ -1,7 +1,7 @@
 import sys
 import os
-#import urllib.request   ## python 3
-from urllib import urlretrieve ## python 2
+import urllib.request   ## python 3
+# from urllib import urlretrieve ## python 2
 import tarfile
 import zipfile
 from preprocess import cifar_preprocess, svhn_preprocess
@@ -37,21 +37,19 @@ def download(data_type):
         os.mkdir(data_folder)
         file_path=os.path.join(data_folder, file_name)
         
-        print "Downloading data file from %s to %s" % (url, file_path)
-        urlretrieve(url=url, 
-                                 filename=file_path,
-                                 reporthook=download_progress)
+        print("Downloading data file from %s to %s" % (url, file_path))
+        urllib.request(url=url, filename=file_path, reporthook=download_progress)
         
-        print "\nExtracting file..."
+        print ("\nExtracting file...")
         if file_path.endswith(".zip"):
             zipfile.ZipFile(file=file_path, mode='r').extractall(data_folder)
         elif file_path.endswith((".tar.gz", ".tgz")):
             tarfile.open(name=file_path, mode="r:gz").extractall(data_folder)
         
-        print "Successfully downloaded and extracted"
+        print ("Successfully downloaded and extracted")
 
     else:
-        print "Data file already exists"
+        print ("Data file already exists")
     
     return data_path
 
